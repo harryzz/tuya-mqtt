@@ -12,7 +12,15 @@ class GenericDevice extends TuyaDevice {
             this.deviceTopics = this.config.template
         } else {
             // Try to get schema to at least know what DPS keys to get initial update
-            const result = await this.device.get({"schema": true})
+            let result = {}
+            if(this.options.cid) {
+                result = await this.parentDevice.device.get({"schema": true, "cid": this.options.cid})
+            } else {
+                result = await this.device.get({"schema": true})
+            }
+            console.log('**********************************************')
+            console.log(result)
+            console.log('**********************************************')
             if (!utils.isJsonString(result)) {
                 if (result === 'Schema for device not available') {
                     debug('Device id '+this.config.id+' failed schema discovery and no custom template defined')

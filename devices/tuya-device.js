@@ -30,7 +30,7 @@ class TuyaDevice {
         // Set default device data for Home Assistant device registry
         // Values may be overridden by individual devices
         this.deviceData = { 
-            ids: [ this.config.id ],
+            ids: [ this.config.cid ? this.config.cid : this.config.id ],
             name: (this.config.name) ? this.config.name : this.config.id,
             mf: 'Tuya'
         }
@@ -41,6 +41,10 @@ class TuyaDevice {
 
         // Device friendly topics
         this.deviceTopics = {}
+
+        this.gateway = false;
+        this.parentDevice = this.config.parentDevice;
+        this.subdevices = new Array()
 
         // Missed heartbeat monitor
         this.heartbeatsMissed = 0
@@ -53,58 +57,124 @@ class TuyaDevice {
             this.baseTopic = this.topic + this.options.id + '/'
         }
 
-        // Create the new Tuya Device
-        this.device = new TuyAPI(JSON.parse(JSON.stringify(this.options)))
+        if(this.config.subDevices) {
+            this.gateway = true
+        }
 
-        // Listen for device data and call update DPS function if valid
-        this.device.on('data', (data) => {
-            if (typeof data === 'object') {
-                debug('Received JSON data from device '+this.options.id+' ->', JSON.stringify(data.dps))
-                this.updateState(data)
-            } else {
-                if (data !== 'json obj data unvalid') {
-                    debug('Received string data from device '+this.options.id+' ->', data.replace(/[^a-zA-Z0-9 ]/g, ''))
+        if(!this.config.cid) { // only gateway must connect
+            // Create the new Tuya Device
+            this.device = new TuyAPI(JSON.parse(JSON.stringify(this.options)))
+
+            // Listen for device data and call update DPS function if valid
+            this.device.on('data', (data) => {
+                if (typeof data === 'object') {
+                    if(data.cid && this.subdevices.length > 0) {
+                        const device = this.subdevices.find(d => d.options.cid === data.cid)
+                        //debug("=====================================")
+                        //debugState(device)
+                        if(device) {
+                            device.updateState(data)
+                        } else {
+                            debug('undefined subdevice: ' + data.cid)
+                        }
+                    } else {
+                        debug('Received JSON data from device '+this.options.id+' ->', JSON.stringify(data.dps))
+                        this.updateState(data)
+                    }
+                } else {
+                    if (data !== 'json obj data unvalid') {
+                        debug('Received string data from device '+this.options.id+'['+this.options.cid+']'+' ->', data.replace(/[^a-zA-Z0-9 ]/g, ''))
+                    }
                 }
-            }
-        })
+            })
 
-        // Attempt to find/connect to device and start heartbeat monitor
-        this.connectDevice()
-        this.monitorHeartbeat()
+            this.device.on('dp-refresh', (data) => {
+                if (typeof data === 'object') {
+                    if(data.cid && this.subdevices.length > 0) { //TODO
+                        const device = this.subdevices.find(d => d.options.cid === data.cid)
+                        //debug("=====================================")
+                        //debugState(device)
+                        if(device) {
+                            device.updateState(data)
+                        } else {
+                            debug('undefined subdevice: ' + data.cid)
+                        }
+                    } else {
+                        debug('Received DP_REFRESH JSON data from device '+this.options.id+' ->', JSON.stringify(data.dps))
+                        this.updateState(data)
+                    }
+                } else {
+                    if (data !== 'json obj data unvalid') {
+                        debug('Received DP_REFRESH string data from device '+this.options.id+'['+this.options.cid+']'+' ->', data.replace(/[^a-zA-Z0-9 ]/g, ''))
+                    }
+                }
+            })
 
-        // On connect perform device specific init
-        this.device.on('connected', async () => {
-            // Sometimes TuyAPI reports connection even on socket error
-            // Wait one second to check if device is really connected before initializing
-            await utils.sleep(1)
-            if (this.device.isConnected()) {
-                debug('Connected to device ' + this.toString())
+            // Attempt to find/connect to device and start heartbeat monitor
+            this.connectDevice()
+            this.monitorHeartbeat()
+            
+
+            // On connect perform device specific init
+            this.device.on('connected', async () => {
+                // Sometimes TuyAPI reports connection even on socket error
+                // Wait one second to check if device is really connected before initializing
+                await utils.sleep(1)
+                if (this.device.isConnected()) {
+                    debug('Connected to device ' + this.toString())
+                    this.heartbeatsMissed = 0
+                    this.publishMqtt(this.baseTopic+'status', 'online')
+                    this.init()
+                    if(this.gateway) {
+                        for (let device of this.subdevices) {
+                            device.connected = true;
+                        }
+                    }
+                }
+            })
+
+            // On disconnect perform device specific disconnect
+            this.device.on('disconnected', async () => {
+                this.connected = false
+                this.publishMqtt(this.baseTopic+'status', 'offline')
+                debug('Disconnected from device ' + this.toString())
+                await utils.sleep(5)
+                this.reconnect()
+            })
+
+            // On connect error call reconnect
+            this.device.on('error', async (err) => {
+                debugError(err)
+                await utils.sleep(1)
+                this.reconnect()
+            })
+
+            // On heartbeat reset heartbeat timer
+            this.device.on('heartbeat', () => {
                 this.heartbeatsMissed = 0
-                this.publishMqtt(this.baseTopic+'status', 'online')
-                this.init()
-            }
-        })
+            })
 
-        // On disconnect perform device specific disconnect
-        this.device.on('disconnected', async () => {
-            this.connected = false
-            this.publishMqtt(this.baseTopic+'status', 'offline')
-            debug('Disconnected from device ' + this.toString())
-            await utils.sleep(5)
-            this.reconnect()
-        })
+        } else {
+            this.options.cid = this.config.cid
+            //this.init();
+        }
+    }
 
-        // On connect error call reconnect
-        this.device.on('error', async (err) => {
-            debugError(err)
-            await utils.sleep(1)
-            this.reconnect()
-        })
-
-        // On heartbeat reset heartbeat timer
-        this.device.on('heartbeat', () => {
-            this.heartbeatsMissed = 0
-        })
+    addSubdevice(subDevice) {
+        debug("Add SubDevice: " + subDevice.options.name + " [" + subDevice.constructor.name + " : " + subDevice.options.cid +"]")
+        //subDevice.parentDevice = this;
+        subDevice.topic = this.baseTopic;
+        if(subDevice.options.name) {
+            subDevice.baseTopic = this.baseTopic + subDevice.options.name + '/';
+        } else {
+            subDevice.baseTopic = this.baseTopic + subDevice.options.cid + '/';
+        }
+        this.subdevices.push(subDevice)
+        subDevice.init();
+    }
+    
+    findSubDevice(subDeviceName) {
+        return this.subdevices.find(d => d.options.name === subDeviceName)
     }
 
     // Get and update cached values of all configured/known dps value for device
@@ -115,7 +185,11 @@ class TuyaDevice {
             const key = this.deviceTopics[topic].key
             if (!this.dps[key]) { this.dps[key] = {} }
             try {
-                this.dps[key].val = await this.device.get({"dps": key})
+                if(this.options.cid) {
+                    this.dps[key].val = await this.parentDevice.device.get({"dps": key, "cid": this.options.cid})
+                } else {
+                    this.dps[key].val = await this.device.get({"dps": key})
+                }
                 this.dps[key].updated = true
             } catch {
                 debugError('Could not get value for device DPS key '+key)
@@ -570,9 +644,17 @@ class TuyaDevice {
     set(command) {
         debug('Set device '+this.options.id+' -> '+JSON.stringify(command))
         return new Promise((resolve, reject) => {
+            if(this.options.cid) {
+                command.cid = this.options.cid
+                this.parentDevice.device.set(command).then((result) => {
+                    resolve(result)
+                })
+    
+            } else {
             this.device.set(command).then((result) => {
                 resolve(result)
             })
+        }
         })
     }
 

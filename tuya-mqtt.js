@@ -55,6 +55,16 @@ function initDevices(configDevices, mqttClient) {
     for (let configDevice of configDevices) {
         const newDevice = getDevice(configDevice, mqttClient)
         tuyaDevices.push(newDevice)
+        if(configDevice.subDevices) {
+            for(let subDevice of configDevice.subDevices) {
+                subDevice.key = newDevice.options.key;
+                subDevice.gwID = newDevice.options.id;
+                subDevice.parentDevice = newDevice;
+                const newSubDevice = getDevice(subDevice, mqttClient)
+                //debugState(newSubDevice)
+                newDevice.addSubdevice(newSubDevice)
+            }
+        }
     }
 }
 
@@ -136,8 +146,8 @@ const main = async() => {
         try {
             message = message.toString()
             const splitTopic = topic.split('/')
-            const topicLength = splitTopic.length
-            const commandTopic = splitTopic[topicLength - 1]
+            let topicLength = splitTopic.length
+            let commandTopic = splitTopic[topicLength - 1]
             const deviceTopicLevel = splitTopic[1]
 
             if (topic === 'homeassistant/status' || topic === 'hass/status' ) {
@@ -153,7 +163,15 @@ const main = async() => {
                 }))
 
                 // Use device topic level to find matching device
-                const device = tuyaDevices.find(d => d.options.name === deviceTopicLevel || d.options.id === deviceTopicLevel)
+                let device = tuyaDevices.find(d => d.options.name === deviceTopicLevel || d.options.id === deviceTopicLevel)
+
+                let dpsKey = splitTopic[topicLength-2]
+
+                if(device.gateway) {
+                    device = device.findSubDevice(splitTopic[2])
+                    topicLength--
+                }
+
                 switch (topicLength) {
                     case 3:
                         device.processCommand(message, commandTopic)
@@ -162,7 +180,7 @@ const main = async() => {
                         device.processDpsCommand(message)
                         break;
                     case 5:
-                        const dpsKey = splitTopic[topicLength-2]
+                        //const dpsKey = splitTopic[topicLength-2]
                         device.processDpsKeyCommand(message, dpsKey)
                         break;
                 }
