@@ -56,6 +56,7 @@ function initDevices(configDevices, mqttClient) {
         const newDevice = getDevice(configDevice, mqttClient)
         tuyaDevices.push(newDevice)
         if(configDevice.subDevices) {
+            newDevice.device.globalOptions.issueGetOnConnect = false
             for(let subDevice of configDevice.subDevices) {
                 subDevice.key = newDevice.options.key;
                 subDevice.gwID = newDevice.options.id;
@@ -165,9 +166,13 @@ const main = async() => {
                 // Use device topic level to find matching device
                 let device = tuyaDevices.find(d => d.options.name === deviceTopicLevel || d.options.id === deviceTopicLevel)
 
+                if(device == null) {
+                    return
+                }
+
                 let dpsKey = splitTopic[topicLength-2]
 
-                if(device.gateway) {
+                if(device.hasOwnProperty('gateway') && device.gateway) {
                     device = device.findSubDevice(splitTopic[2])
                     topicLength--
                 }

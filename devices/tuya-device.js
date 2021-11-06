@@ -124,10 +124,11 @@ class TuyaDevice {
                     debug('Connected to device ' + this.toString())
                     this.heartbeatsMissed = 0
                     this.publishMqtt(this.baseTopic+'status', 'online')
-                    this.init()
+                    if(!this.gateway) { this.init() }
                     if(this.gateway) {
                         for (let device of this.subdevices) {
                             device.connected = true;
+                            device.init();
                         }
                     }
                 }
@@ -170,7 +171,7 @@ class TuyaDevice {
             subDevice.baseTopic = this.baseTopic + subDevice.options.cid + '/';
         }
         this.subdevices.push(subDevice)
-        subDevice.init();
+        //subDevice.init();
     }
     
     findSubDevice(subDeviceName) {
@@ -693,7 +694,7 @@ class TuyaDevice {
         const status = (this.device.isConnected()) ? 'online' : 'offline'
         this.publishMqtt(this.baseTopic+'status', status)
         await utils.sleep(1)
-        this.init()
+        if(!this.gateway) { this.init() }
     }
     
     // Simple function to monitor heartbeats to determine if 

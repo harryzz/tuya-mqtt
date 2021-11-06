@@ -1,7 +1,7 @@
 old/
 test/
 config.json
-devices.conf
+devices.conf*
 .vscode/
 .bak
 
