@@ -1,4 +1,4 @@
-const TuyAPI = require('tuyapi')
+const TuyAPI = require('../../tuyapi')
 const { evaluate } = require('mathjs')
 const utils = require('../lib/utils')
 const debug = require('debug')('tuya-mqtt:tuyapi')
@@ -718,7 +718,7 @@ class TuyaDevice {
     // Publish MQTT
     publishMqtt(topic, message, isDebug) {
         if (isDebug) { debugState(topic, message) }
-        this.mqttClient.publish(topic, message, { qos: 1 });
+        this.mqttClient.publish(topic, message, { qos: 1, retain: true });
     }
 }
 

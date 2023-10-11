@@ -107,7 +107,8 @@ class RGBTWLight extends TuyaDevice {
 
     initDiscovery() {
         const configTopic = 'homeassistant/light/'+this.config.id+'/config'
-
+        //atopic = new Array()
+        //atopic[0].topic = this.baseTopic+'status'
         const discoveryData = {
             name: (this.config.name) ? this.config.name : this.config.id,
             state_topic: this.baseTopic+'state',
@@ -120,9 +121,11 @@ class RGBTWLight extends TuyaDevice {
             white_value_state_topic: this.baseTopic+'white_brightness_state',
             white_value_command_topic: this.baseTopic+'white_brightness_command',
             white_value_scale: 100,
-            availability_topic: this.baseTopic+'status',
-            payload_available: 'online',
-            payload_not_available: 'offline',
+            //availability_topic: this.baseTopic+'status',
+            //payload_available: 'online',
+            //payload_not_available: 'offline',
+            availability:[{topic: this.baseTopic+'status'}],
+            availability_mode: 'all',
             unique_id: this.config.id,
             device: this.deviceData
         }
